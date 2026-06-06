@@ -78,6 +78,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+// Change ONLY the very bottom of your file to this:
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`[asanti-api] Running on port ${PORT} — ${process.env.NODE_ENV || 'development'}`);
 });
