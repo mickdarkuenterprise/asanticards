@@ -1,12 +1,21 @@
 const express = require('express');
+const supabase = require('../lib/supabase');
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  res.json([
-    { idx: 0, id: 'diaspora', name: 'Diaspora', delivery_time: '7–14 business days', price: '200' },
-    { idx: 1, id: 'express', name: 'Express', delivery_time: '1–2 business days', price: '80' },
-    { idx: 2, id: 'standard', name: 'Standard', delivery_time: '3–5 business days', price: '50' }
-  ]);
+// Fetch all available shipping methods from Supabase
+router.get('/', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('shipping_methods')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('[error] Fetching shipping failed:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 module.exports = router;
