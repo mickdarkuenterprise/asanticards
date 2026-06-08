@@ -5,6 +5,7 @@ const helmet  = require('helmet');
 const cors    = require('cors');
 const rateLimit = require('express-rate-limit');
 
+const shippingRouter = require('./routes/shipping');
 const productsRouter = require('./routes/products');
 const ordersRouter   = require('./routes/orders');
 const webhookRouter  = require('./routes/webhook');
@@ -62,6 +63,8 @@ app.use('/api/admin', adminLimiter);
 app.use('/api/products', productsRouter);
 app.use('/api/orders',   ordersRouter);
 app.use('/api/admin',    adminRouter);
+app.use('/api/shipping_methods', shippingRouter);
+
 
 // ── Health check ─────────────────────────────────────────────────
 app.get('/health', (req, res) => {
