@@ -71,6 +71,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', env: process.env.NODE_ENV, timestamp: new Date().toISOString() });
 });
 
+// ── Shipping methods API ─────────────────────────────────────────
+app.get('/api/shipping-methods', (req, res) => {
+  const shippingMethods = [
+    { id: 'standard', name: 'Standard', days: '3–5 business days', price: 50 },
+    { id: 'express', name: 'Express', days: '1–2 business days', price: 80 },
+    { id: 'diaspora', name: 'Diaspora', days: '7–14 business days', price: 200 }
+  ];
+  res.json(shippingMethods);
+});
+
 // ── 404 handler ──────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
