@@ -10,6 +10,8 @@ const productsRouter = require('./routes/products');
 const ordersRouter   = require('./routes/orders');
 const webhookRouter  = require('./routes/webhook');
 const adminRouter    = require('./routes/admin');
+const newsletterRouter = require('./routes/newsletter');
+const contactRouter     = require('./routes/contact');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -64,6 +66,8 @@ app.use('/api/products', productsRouter);
 app.use('/api/orders',   ordersRouter);
 app.use('/api/admin',    adminRouter);
 app.use('/api/shipping_methods', shippingRouter);
+app.use('/api/newsletter', newsletterRouter);
+app.use('/api/contact',    contactRouter);
 
 
 // ── Health check ─────────────────────────────────────────────────
