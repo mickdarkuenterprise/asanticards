@@ -3,11 +3,9 @@ const { body, validationResult } = require('express-validator');
 const supabase = require('../lib/supabase');
 const { requireAuth } = require('../middleware/auth');
 const { sendOrderConfirmation, sendAdminOrderAlert } = require('../lib/email');
+const { SHIPPING_METHODS, getShippingCost } = require('../lib/shipping');
 
 const router = express.Router();
-
-const SHIPPING_COSTS = { standard: 10, express: 30, diaspora: 80 };
-const FREE_SHIPPING_THRESHOLD = 200; // GH₵
 
 // ── POST /api/orders — create a pending order before payment ────
 // Called from the frontend right before opening Paystack.
@@ -19,7 +17,7 @@ router.post(
     body('customer_email').isEmail().normalizeEmail(),
     body('customer_phone').trim().notEmpty(),
     body('delivery_address').trim().notEmpty(),
-    body('shipping_method').isIn(['standard', 'express', 'diaspora']),
+    body('shipping_method').isIn(SHIPPING_METHODS.map(m => m.id)),
     body('items').isArray({ min: 1 }),
     body('items.*.product_id').notEmpty(),
     body('items.*.qty').isInt({ min: 1 }),
@@ -53,9 +51,7 @@ router.post(
 
     // Calculate totals
     const subtotal = lineItems.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingCost = subtotal >= FREE_SHIPPING_THRESHOLD && shipping_method === 'standard'
-      ? 0
-      : SHIPPING_COSTS[shipping_method];
+    const shippingCost = getShippingCost(shipping_method, subtotal);
     const total = Math.round((subtotal + shippingCost) * 100) / 100; // avoid float drift like 204.00000000000003
 
     // Generate ref

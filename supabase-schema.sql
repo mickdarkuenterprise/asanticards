@@ -82,24 +82,7 @@ $$;
 revoke execute on function decrement_stock(text, integer) from public, anon, authenticated;
 
 
--- ── SHIPPING METHODS ────────────────────────────────────────────
--- Read by GET /api/shipping_methods. ids must match the shipping_method
--- values accepted by POST /api/orders (standard / express / diaspora).
--- NOTE: routes/orders.js currently charges from its own SHIPPING_COSTS
--- constant, so keep these prices in sync with it.
-create table if not exists shipping_methods (
-  id             text primary key,
-  name           text not null,
-  price          numeric(10,2) not null check (price >= 0),
-  delivery_time  text,
-  created_at     timestamptz not null default now()
-);
-
-insert into shipping_methods (id, name, price, delivery_time) values
-  ('standard', 'Standard Delivery', 10.00, '3–5 business days'),
-  ('express',  'Express Delivery',  30.00, '1–2 business days'),
-  ('diaspora', 'Diaspora Shipping', 80.00, '7–14 business days')
-on conflict (id) do nothing;
+-- Shipping methods and prices live in lib/shipping.js, not the database.
 
 
 -- ── NEWSLETTER SUBSCRIBERS ──────────────────────────────────────
@@ -124,14 +107,6 @@ alter table orders enable row level security;
 
 -- Service key bypasses RLS automatically, so no extra policy needed for the API.
 -- This just ensures no direct public access via anon key.
-
--- Shipping methods: public read
-alter table shipping_methods enable row level security;
-
-drop policy if exists "Public can read shipping methods" on shipping_methods;
-create policy "Public can read shipping methods"
-  on shipping_methods for select
-  using (true);
 
 -- Newsletter subscribers: no public access (contains email addresses)
 alter table newsletter_subscribers enable row level security;
