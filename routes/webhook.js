@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const supabase = require('../lib/supabase');
-const { sendOrderConfirmation, sendAdminOrderAlert } = require('../lib/email');
+const { sendOrderConfirmation, sendAdminOrderAlert, sendAdminStockAlert } = require('../lib/email');
 
 const router = express.Router();
 
@@ -119,6 +119,9 @@ async function processEvent(event) {
   const updatedOrder = claimed[0];
 
   // ── 7. Deduct stock ───────────────────────────────────────────────
+  // decrement_stock refuses to go below 0, so a failure here means the
+  // item was oversold (or removed) — the customer has already paid.
+  const stockProblems = [];
   for (const item of updatedOrder.items) {
     const { error: stockErr } = await supabase.rpc('decrement_stock', {
       p_product_id: item.product_id,
@@ -126,16 +129,26 @@ async function processEvent(event) {
     });
     if (stockErr) {
       console.error(`[webhook] Stock decrement failed for ${item.product_id}:`, stockErr.message);
+      stockProblems.push({ product_id: item.product_id, qty: item.qty, reason: stockErr.message });
     }
   }
 
   // ── 8. Send emails ────────────────────────────────────────────────
-  try {
-    await sendOrderConfirmation(updatedOrder);
-    await sendAdminOrderAlert(updatedOrder);
-  } catch (emailErr) {
-    // Don't fail the webhook if email fails — log and move on
-    console.error('[webhook] Email send failed:', emailErr.message);
+  // Sent independently so one failure doesn't stop the others.
+  // Don't fail the webhook if email fails — log and move on.
+  const emails = [
+    ['customer confirmation', () => sendOrderConfirmation(updatedOrder)],
+    ['admin alert', () => sendAdminOrderAlert(updatedOrder)],
+  ];
+  if (stockProblems.length) {
+    emails.push(['admin stock alert', () => sendAdminStockAlert(updatedOrder, stockProblems)]);
+  }
+  for (const [label, send] of emails) {
+    try {
+      await send();
+    } catch (emailErr) {
+      console.error(`[webhook] Email send failed (${label}) for ${orderRef}:`, emailErr.message);
+    }
   }
 
   console.log(`[webhook] Order ${orderRef} confirmed — GH₵ ${amountPaid}`);

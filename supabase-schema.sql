@@ -59,7 +59,9 @@ create index if not exists idx_orders_created_at  on orders(created_at desc);
 
 -- ── STOCK DECREMENT FUNCTION ────────────────────────────────────
 -- Called from the webhook after payment is verified.
--- Uses a check to prevent stock going below 0.
+-- Deducts atomically and refuses to go below 0: if there isn't enough
+-- stock it raises an error (and leaves stock unchanged) so the webhook
+-- can alert the admin about the oversold order.
 create or replace function decrement_stock(p_product_id text, p_qty integer)
 returns void
 language plpgsql
@@ -67,12 +69,17 @@ as $$
 begin
   update products
   set
-    stock      = greatest(0, stock - p_qty),
+    stock      = stock - p_qty,
     updated_at = now()
-  where id = p_product_id;
+  where id = p_product_id
+    and stock >= p_qty;
 
   if not found then
-    raise exception 'Product % not found', p_product_id;
+    if exists (select 1 from products where id = p_product_id) then
+      raise exception 'Insufficient stock for product % (wanted %)', p_product_id, p_qty;
+    else
+      raise exception 'Product % not found', p_product_id;
+    end if;
   end if;
 end;
 $$;

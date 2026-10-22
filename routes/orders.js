@@ -7,6 +7,8 @@ const { SHIPPING_METHODS, getShippingCost } = require('../lib/shipping');
 
 const router = express.Router();
 
+const MAX_QTY_PER_PRODUCT = 20; // per order — stops one checkout from emptying stock
+
 // ── POST /api/orders — create a pending order before payment ────
 // Called from the frontend right before opening Paystack.
 // Returns an order ref that gets passed to Paystack as metadata.
@@ -20,7 +22,7 @@ router.post(
     body('shipping_method').isIn(SHIPPING_METHODS.map(m => m.id)),
     body('items').isArray({ min: 1 }),
     body('items.*.product_id').notEmpty(),
-    body('items.*.qty').isInt({ min: 1 }),
+    body('items.*.qty').isInt({ min: 1, max: MAX_QTY_PER_PRODUCT }).toInt(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -28,8 +30,14 @@ router.post(
 
     const { customer_name, customer_email, customer_phone, delivery_address, shipping_method, items } = req.body;
 
+    // Merge repeated lines for the same product so stock is checked on the combined quantity
+    const qtyByProduct = new Map();
+    for (const item of items) {
+      qtyByProduct.set(item.product_id, (qtyByProduct.get(item.product_id) || 0) + item.qty);
+    }
+
     // Fetch all requested products in one query
-    const productIds = items.map(i => i.product_id);
+    const productIds = [...qtyByProduct.keys()];
     const { data: products, error: prodErr } = await supabase
       .from('products')
       .select('id, name, price, stock')
@@ -40,13 +48,16 @@ router.post(
 
     // Validate stock for each item
     const lineItems = [];
-    for (const item of items) {
-      const prod = products.find(p => p.id === item.product_id);
-      if (!prod) return res.status(400).json({ error: `Product ${item.product_id} not found` });
-      if (prod.stock < item.qty) {
+    for (const [productId, qty] of qtyByProduct) {
+      const prod = products.find(p => p.id === productId);
+      if (!prod) return res.status(400).json({ error: `Product ${productId} not found` });
+      if (qty > MAX_QTY_PER_PRODUCT) {
+        return res.status(400).json({ error: `Maximum ${MAX_QTY_PER_PRODUCT} of "${prod.name}" per order` });
+      }
+      if (prod.stock < qty) {
         return res.status(400).json({ error: `Insufficient stock for "${prod.name}" — only ${prod.stock} available` });
       }
-      lineItems.push({ product_id: prod.id, name: prod.name, price: prod.price, qty: item.qty });
+      lineItems.push({ product_id: prod.id, name: prod.name, price: prod.price, qty });
     }
 
     // Calculate totals

@@ -59,9 +59,16 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts, please try again later.' },
 });
 
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,   // 1 hour
+  max: 5,                      // max 5 contact messages per IP per hour
+  message: { error: 'Too many messages, please try again later.' },
+});
+
 app.use('/api/', apiLimiter);
 app.post('/api/orders', checkoutLimiter);       // checkout only — not the admin order list
 app.post('/api/admin/login', loginLimiter);
+app.post('/api/contact', contactLimiter);
 
 // ── Routes ───────────────────────────────────────────────────────
 app.use('/api/products', productsRouter);
