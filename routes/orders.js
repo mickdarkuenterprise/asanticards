@@ -56,7 +56,7 @@ router.post(
     const shippingCost = subtotal >= FREE_SHIPPING_THRESHOLD && shipping_method === 'standard'
       ? 0
       : SHIPPING_COSTS[shipping_method];
-    const total = subtotal + shippingCost;
+    const total = Math.round((subtotal + shippingCost) * 100) / 100; // avoid float drift like 204.00000000000003
 
     // Generate ref
     const ref = 'ASANTI-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
@@ -85,7 +85,7 @@ router.post(
     // Return the ref and total for Paystack initialisation
     res.status(201).json({
       order_ref: order.ref,
-      total_pesewas: total * 100,   // Paystack amount in pesewas (GHS subunit)
+      total_pesewas: Math.round(total * 100),   // Paystack amount in pesewas (GHS subunit) — must be an integer
       total_ghs: total,
     });
   }

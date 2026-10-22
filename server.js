@@ -4,6 +4,7 @@ const express = require('express');
 const helmet  = require('helmet');
 const cors    = require('cors');
 const rateLimit = require('express-rate-limit');
+const { hasValidAdminToken } = require('./middleware/auth');
 
 const shippingRouter = require('./routes/shipping');
 const productsRouter = require('./routes/products');
@@ -42,6 +43,7 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: hasValidAdminToken,    // logged-in admin isn't throttled while using the dashboard
   message: { error: 'Too many requests, please try again later.' },
 });
 
@@ -51,15 +53,15 @@ const checkoutLimiter = rateLimit({
   message: { error: 'Too many checkout attempts, please try again later.' },
 });
 
-const adminLimiter = rateLimit({
+const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Too many admin requests.' },
+  max: 20,                     // max 20 login attempts per IP per 15 minutes
+  message: { error: 'Too many login attempts, please try again later.' },
 });
 
 app.use('/api/', apiLimiter);
-app.use('/api/orders', checkoutLimiter);
-app.use('/api/admin', adminLimiter);
+app.post('/api/orders', checkoutLimiter);       // checkout only — not the admin order list
+app.post('/api/admin/login', loginLimiter);
 
 // ── Routes ───────────────────────────────────────────────────────
 app.use('/api/products', productsRouter);
@@ -83,6 +85,11 @@ app.use((req, res) => {
 
 // ── Global error handler ─────────────────────────────────────────
 app.use((err, req, res, next) => {
+  // Client errors (e.g. malformed JSON → 400, body too large → 413) keep their status
+  const status = err.status || err.statusCode || 500;
+  if (status < 500) {
+    return res.status(status).json({ error: err.type === 'entity.parse.failed' ? 'Malformed JSON body' : 'Bad request' });
+  }
   console.error('[error]', err.message);
   res.status(500).json({ error: 'Internal server error' });
 });

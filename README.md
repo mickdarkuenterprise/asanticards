@@ -53,7 +53,7 @@ npm run dev
    - Copy **Public Key** → `PAYSTACK_PUBLIC_KEY`
 3. Under **Webhooks**, add:
    - URL: `https://your-api-domain.railway.app/api/webhook`
-   - Copy the webhook secret → `PAYSTACK_WEBHOOK_SECRET`
+   - No separate webhook secret is needed — Paystack signs webhooks with your `PAYSTACK_SECRET_KEY`
 4. Enable the `charge.success` event
 
 ---

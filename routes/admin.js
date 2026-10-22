@@ -55,8 +55,10 @@ router.get('/stats', requireAuth, async (req, res) => {
   const orders = ordersResult.data;
   const products = productsResult.data;
 
-  const paidOrders = orders.filter(o => o.status === 'paid');
-  const revenue = paidOrders.reduce((s, o) => s + o.total, 0);
+  // Orders keep counting as paid as they move through fulfilment
+  const PAID_STATUSES = ['paid', 'processing', 'shipped', 'delivered'];
+  const paidOrders = orders.filter(o => PAID_STATUSES.includes(o.status));
+  const revenue = paidOrders.reduce((s, o) => s + Number(o.total), 0);
   const lowStock = products.filter(p => p.stock > 0 && p.stock <= 5);
   const outOfStock = products.filter(p => p.stock === 0);
 

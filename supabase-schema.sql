@@ -78,11 +78,43 @@ begin
 end;
 $$;
 
+-- Only the server (service key) may call this — block anon/authenticated via the public API
+revoke execute on function decrement_stock(text, integer) from public, anon, authenticated;
+
+
+-- ── SHIPPING METHODS ────────────────────────────────────────────
+-- Read by GET /api/shipping_methods. ids must match the shipping_method
+-- values accepted by POST /api/orders (standard / express / diaspora).
+-- NOTE: routes/orders.js currently charges from its own SHIPPING_COSTS
+-- constant, so keep these prices in sync with it.
+create table if not exists shipping_methods (
+  id             text primary key,
+  name           text not null,
+  price          numeric(10,2) not null check (price >= 0),
+  delivery_time  text,
+  created_at     timestamptz not null default now()
+);
+
+insert into shipping_methods (id, name, price, delivery_time) values
+  ('standard', 'Standard Delivery', 10.00, '3–5 business days'),
+  ('express',  'Express Delivery',  30.00, '1–2 business days'),
+  ('diaspora', 'Diaspora Shipping', 80.00, '7–14 business days')
+on conflict (id) do nothing;
+
+
+-- ── NEWSLETTER SUBSCRIBERS ──────────────────────────────────────
+-- Written by POST /api/newsletter (upsert on email).
+create table if not exists newsletter_subscribers (
+  email          text primary key,
+  subscribed_at  timestamptz not null default now()
+);
+
 
 -- ── ROW LEVEL SECURITY ──────────────────────────────────────────
 -- Products: public read, no public write (server uses service key)
 alter table products enable row level security;
 
+drop policy if exists "Public can read active products" on products;
 create policy "Public can read active products"
   on products for select
   using (active = true);
@@ -92,6 +124,17 @@ alter table orders enable row level security;
 
 -- Service key bypasses RLS automatically, so no extra policy needed for the API.
 -- This just ensures no direct public access via anon key.
+
+-- Shipping methods: public read
+alter table shipping_methods enable row level security;
+
+drop policy if exists "Public can read shipping methods" on shipping_methods;
+create policy "Public can read shipping methods"
+  on shipping_methods for select
+  using (true);
+
+-- Newsletter subscribers: no public access (contains email addresses)
+alter table newsletter_subscribers enable row level security;
 
 
 -- ── UPDATED_AT TRIGGER ──────────────────────────────────────────
@@ -103,10 +146,12 @@ begin
 end;
 $$;
 
+drop trigger if exists set_products_updated_at on products;
 create trigger set_products_updated_at
   before update on products
   for each row execute function update_updated_at();
 
+drop trigger if exists set_orders_updated_at on orders;
 create trigger set_orders_updated_at
   before update on orders
   for each row execute function update_updated_at();

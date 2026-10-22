@@ -15,4 +15,16 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+// True when the request carries a valid admin JWT (used to exempt the admin from rate limits)
+function hasValidAdminToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
+  try {
+    jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { requireAuth, hasValidAdminToken };

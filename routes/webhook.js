@@ -11,12 +11,16 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   // ── 1. Verify the request genuinely came from Paystack ──────────
+  // Paystack signs webhooks with your SECRET KEY (there is no separate webhook secret)
   const hash = crypto
-    .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET)
+    .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY)
     .update(req.body)          // req.body is raw Buffer here
     .digest('hex');
 
-  if (hash !== req.headers['x-paystack-signature']) {
+  const expected  = Buffer.from(hash);
+  const signature = Buffer.from(req.headers['x-paystack-signature'] || '');
+
+  if (signature.length !== expected.length || !crypto.timingSafeEqual(signature, expected)) {
     console.warn('[webhook] Invalid signature — rejected');
     return res.status(401).send('Invalid signature');
   }
@@ -32,6 +36,16 @@ router.post('/', async (req, res) => {
   // Acknowledge immediately — Paystack expects a 200 within 30s
   res.sendStatus(200);
 
+  // The response is already sent, so errors from here on must be caught
+  // and logged — an unhandled rejection would crash the process.
+  try {
+    await processEvent(event);
+  } catch (err) {
+    console.error('[webhook] Processing failed:', err.message);
+  }
+});
+
+async function processEvent(event) {
   // ── 3. Only process successful charges ──────────────────────────
   if (event.event !== 'charge.success') return;
 
@@ -63,31 +77,25 @@ router.post('/', async (req, res) => {
   }
 
   if (order.status !== 'pending') {
-    // Already processed — idempotency guard
     console.log('[webhook] Order already processed:', orderRef);
     return;
   }
 
   // ── 5. Verify amount matches what we calculated ──────────────────
-  if (Math.abs(amountPaid - order.total) > 0.01) {
+  if (Math.abs(amountPaid - Number(order.total)) > 0.01) {
     console.error(`[webhook] Amount mismatch for ${orderRef}: expected ${order.total}, got ${amountPaid}`);
-    await supabase.from('orders').update({ status: 'amount_mismatch', paystack_ref: paystackRef }).eq('ref', orderRef);
+    await supabase
+      .from('orders')
+      .update({ status: 'amount_mismatch', paystack_ref: paystackRef })
+      .eq('ref', orderRef)
+      .eq('status', 'pending');
     return;
   }
 
-  // ── 6. Deduct stock atomically ────────────────────────────────────
-  for (const item of order.items) {
-    const { error: stockErr } = await supabase.rpc('decrement_stock', {
-      p_product_id: item.product_id,
-      p_qty: item.qty,
-    });
-    if (stockErr) {
-      console.error(`[webhook] Stock decrement failed for ${item.product_id}:`, stockErr.message);
-    }
-  }
-
-  // ── 7. Mark order as paid ─────────────────────────────────────────
-  const { data: updatedOrder } = await supabase
+  // ── 6. Claim the order — mark paid ONLY if it is still pending ───
+  // This conditional update is the idempotency guard: if Paystack delivers
+  // the same event twice, only one delivery gets a row back.
+  const { data: claimed, error: claimErr } = await supabase
     .from('orders')
     .update({
       status: 'paid',
@@ -96,8 +104,30 @@ router.post('/', async (req, res) => {
       updated_at: new Date().toISOString(),
     })
     .eq('ref', orderRef)
-    .select()
-    .single();
+    .eq('status', 'pending')
+    .select();
+
+  if (claimErr) {
+    console.error(`[webhook] Could not mark ${orderRef} as paid:`, claimErr.message);
+    return;
+  }
+  if (!claimed || claimed.length === 0) {
+    console.log('[webhook] Order already processed (concurrent delivery):', orderRef);
+    return;
+  }
+
+  const updatedOrder = claimed[0];
+
+  // ── 7. Deduct stock ───────────────────────────────────────────────
+  for (const item of updatedOrder.items) {
+    const { error: stockErr } = await supabase.rpc('decrement_stock', {
+      p_product_id: item.product_id,
+      p_qty: item.qty,
+    });
+    if (stockErr) {
+      console.error(`[webhook] Stock decrement failed for ${item.product_id}:`, stockErr.message);
+    }
+  }
 
   // ── 8. Send emails ────────────────────────────────────────────────
   try {
@@ -109,6 +139,6 @@ router.post('/', async (req, res) => {
   }
 
   console.log(`[webhook] Order ${orderRef} confirmed — GH₵ ${amountPaid}`);
-});
+}
 
 module.exports = router;
