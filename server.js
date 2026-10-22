@@ -5,6 +5,7 @@ const helmet  = require('helmet');
 const cors    = require('cors');
 const rateLimit = require('express-rate-limit');
 const { hasValidAdminToken } = require('./middleware/auth');
+const { startCleanupJob } = require('./lib/cleanup');
 
 const shippingRouter = require('./routes/shipping');
 const productsRouter = require('./routes/products');
@@ -22,9 +23,22 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet());
 
 // ── CORS — only allow your frontend domain ───────────────────────
+// FRONTEND_URL may list several origins separated by commas. Each one is
+// also allowed with/without "www." since the site is served on both.
+function withWwwVariants(urls) {
+  const origins = new Set();
+  for (const raw of urls.split(',').map(u => u.trim().replace(/\/+$/, '')).filter(Boolean)) {
+    origins.add(raw);
+    const url = new URL(raw);
+    url.hostname = url.hostname.startsWith('www.') ? url.hostname.slice(4) : `www.${url.hostname}`;
+    origins.add(url.origin);
+  }
+  return [...origins];
+}
+
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL          // e.g. https://asanticards.com
+    ? withWwwVariants(process.env.FRONTEND_URL || '')   // e.g. https://asanticards.com
     : ['http://localhost:3000', 'http://127.0.0.1:5500'],
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -101,7 +115,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Change ONLY the very bottom of your file to this:
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[asanti-api] Running on port ${PORT} — ${process.env.NODE_ENV || 'development'}`);
+  startCleanupJob();
 });

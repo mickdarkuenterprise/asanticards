@@ -23,6 +23,7 @@ router.get('/:id', async (req, res) => {
     .from('products')
     .select('id, name, price, category, stock, active')
     .eq('id', req.params.id)
+    .eq('active', true)          // deactivated products are hidden, same as the list
     .single();
 
   if (error || !data) return res.status(404).json({ error: 'Product not found' });

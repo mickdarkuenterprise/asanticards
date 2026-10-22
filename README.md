@@ -7,11 +7,11 @@ Handles product stock, order creation, Paystack webhook verification, and admin 
 
 ## Stack
 
-- **Runtime:** Node.js 18+
+- **Runtime:** Node.js 22+
 - **Framework:** Express
 - **Database:** Supabase (PostgreSQL)
 - **Payments:** Paystack
-- **Email:** Nodemailer (via Namecheap cPanel SMTP)
+- **Email:** Resend
 - **Deployment:** Railway (recommended) or any Node.js host
 
 ---
@@ -104,15 +104,18 @@ Your API will be live at something like `https://asanti-api.up.railway.app`
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
 | GET | `/api/products` | Public | List all active products with stock |
-| GET | `/api/products/:id` | Public | Single product |
+| GET | `/api/products/:id` | Public | Single active product |
 | PATCH | `/api/products/:id` | Admin JWT | Update stock / price |
-| POST | `/api/orders` | Public | Create pending order |
+| POST | `/api/orders` | Public | Create pending order (max 20 of each product) |
 | GET | `/api/orders` | Admin JWT | List all orders |
 | GET | `/api/orders/:ref` | Admin JWT | Single order |
 | PATCH | `/api/orders/:ref/status` | Admin JWT | Update order status |
 | POST | `/api/webhook` | Paystack HMAC | Payment confirmed |
 | POST | `/api/admin/login` | — | Returns JWT |
 | GET | `/api/admin/stats` | Admin JWT | Dashboard summary |
+| GET | `/api/shipping_methods` | Public | Shipping options and prices (from `lib/shipping.js`) |
+| POST | `/api/newsletter` | Public | Newsletter signup |
+| POST | `/api/contact` | Public | Contact form → email to admin (5/hour per IP) |
 | GET | `/health` | Public | Health check |
 
 ---
@@ -190,15 +193,22 @@ function onPaymentSuccess(response, orderRef) {
 
 ---
 
-## Email (Namecheap cPanel SMTP)
+## Email (Resend)
 
-1. In cPanel, go to **Email Accounts** → create `orders@asanticards.com`
-2. Go to **Email → Email Accounts → Connect Devices** to get SMTP settings
-3. Typical Namecheap SMTP settings:
-   - Host: `mail.asanticards.com`
-   - Port: `465` (SSL) or `587` (TLS)
-   - User: `orders@asanticards.com`
-   - Pass: your email password
+1. Create an account at resend.com and add `asanticards.com` under **Domains**
+2. Add the DNS records Resend shows (in Namecheap → Domain List → Advanced DNS) and wait for it to verify
+3. Create an API key → `RESEND_API_KEY`
+4. Set `EMAIL_FROM` to an address on the verified domain, e.g. `ASA NTI Orders <orders@asanticards.com>`
+
+Emails sent: order confirmation (customer), new-order alert (admin), stock problem alert (admin), contact form (admin).
+
+---
+
+## Shipping, stock and order housekeeping
+
+- **Shipping prices** live in `lib/shipping.js` — edit there and redeploy. Standard is free from GH₵ 200.
+- **Stock** is deducted by the webhook after payment. If a paid order can't be deducted (oversold), the admin gets an email alert.
+- **Unpaid orders** are cancelled automatically after 48 hours (`lib/cleanup.js`). A payment that arrives later still marks the order paid.
 
 ---
 
@@ -210,4 +220,4 @@ function onPaymentSuccess(response, orderRef) {
 - [ ] `ADMIN_PASSWORD_HASH` is a bcrypt hash, not plaintext
 - [ ] Paystack webhook signature verified on every request
 - [ ] HTTPS enabled on both frontend (Namecheap SSL) and API (Railway provides this)
-- [ ] `FRONTEND_URL` set correctly in production for CORS
+- [ ] `FRONTEND_URL` set correctly in production for CORS (the `www.` variant is allowed automatically; separate several origins with commas)

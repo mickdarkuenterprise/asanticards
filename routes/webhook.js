@@ -5,6 +5,11 @@ const { sendOrderConfirmation, sendAdminOrderAlert, sendAdminStockAlert } = requ
 
 const router = express.Router();
 
+// Statuses a successful payment may move to 'paid'. Unpaid orders are
+// auto-cancelled after a while (see lib/cleanup.js) — if the customer's
+// money still arrives, the order must be honoured, not ignored.
+const CLAIMABLE_STATUSES = ['pending', 'cancelled'];
+
 // IMPORTANT: This route must receive the RAW request body (not JSON-parsed)
 // so the HMAC signature can be verified correctly.
 // express.raw() is applied in server.js for this route only.
@@ -76,7 +81,7 @@ async function processEvent(event) {
     return;
   }
 
-  if (order.status !== 'pending') {
+  if (!CLAIMABLE_STATUSES.includes(order.status)) {
     console.log('[webhook] Order already processed:', orderRef);
     return;
   }
@@ -88,11 +93,11 @@ async function processEvent(event) {
       .from('orders')
       .update({ status: 'amount_mismatch', paystack_ref: paystackRef })
       .eq('ref', orderRef)
-      .eq('status', 'pending');
+      .in('status', CLAIMABLE_STATUSES);
     return;
   }
 
-  // ── 6. Claim the order — mark paid ONLY if it is still pending ───
+  // ── 6. Claim the order — mark paid ONLY if it is still unpaid ────
   // This conditional update is the idempotency guard: if Paystack delivers
   // the same event twice, only one delivery gets a row back.
   const { data: claimed, error: claimErr } = await supabase
@@ -104,7 +109,7 @@ async function processEvent(event) {
       updated_at: new Date().toISOString(),
     })
     .eq('ref', orderRef)
-    .eq('status', 'pending')
+    .in('status', CLAIMABLE_STATUSES)
     .select();
 
   if (claimErr) {
