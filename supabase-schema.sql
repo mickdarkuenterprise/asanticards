@@ -20,7 +20,7 @@ create table if not exists products (
 -- Seed the initial product catalogue
 insert into products (id, name, price, category, stock, sort_order) values
   ('collectors', 'ASA NTI — Collector''s Edition', 350.00, 'game',   50, 1),
-  ('bundle2',    'Two-Box Bundle',                 500.00, 'bundle', 20, 2),
+  ('bundle2',    'Two-Box Bundle',                 650.00, 'bundle', 20, 2),
   ('tote',       'ASA NTI Tote Bag',               200.00, 'merch',  35, 3),
   ('poster',     'Three Suits Art Poster',         200.00, 'merch',  30, 4)
 on conflict (id) do nothing;

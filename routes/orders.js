@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 const supabase = require('../lib/supabase');
 const { requireAuth } = require('../middleware/auth');
 const { sendOrderConfirmation, sendAdminOrderAlert } = require('../lib/email');
-const { SHIPPING_METHODS, getShippingCost } = require('../lib/shipping');
+const { SHIPPING_METHODS, getShippingCost, methodAllowedFor } = require('../lib/shipping');
 
 const router = express.Router();
 
@@ -20,6 +20,7 @@ router.post(
     body('customer_phone').trim().notEmpty(),
     body('delivery_address').trim().notEmpty(),
     body('shipping_method').isIn(SHIPPING_METHODS.map(m => m.id)),
+    body('country').optional().trim(),
     body('items').isArray({ min: 1 }),
     body('items.*.product_id').notEmpty(),
     body('items.*.qty').isInt({ min: 1, max: MAX_QTY_PER_PRODUCT }).toInt(),
@@ -29,6 +30,13 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { customer_name, customer_email, customer_phone, delivery_address, shipping_method, items } = req.body;
+
+    // Orders outside Ghana must pay Diaspora shipping. Older pages don't send `country`,
+    // so fall back to the last part of the address ("…, Accra, Ghana").
+    const country = req.body.country || delivery_address.split(',').pop();
+    if (!methodAllowedFor(shipping_method, country)) {
+      return res.status(400).json({ error: 'That shipping method is not available for your country — please choose Diaspora for delivery outside Ghana' });
+    }
 
     // Merge repeated lines for the same product so stock is checked on the combined quantity
     const qtyByProduct = new Map();
