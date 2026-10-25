@@ -14,6 +14,7 @@ const webhookRouter  = require('./routes/webhook');
 const adminRouter    = require('./routes/admin');
 const newsletterRouter = require('./routes/newsletter');
 const contactRouter     = require('./routes/contact');
+const reviewsRouter     = require('./routes/reviews');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -84,6 +85,13 @@ app.post('/api/orders', checkoutLimiter);       // checkout only — not the adm
 app.post('/api/admin/login', loginLimiter);
 app.post('/api/contact', contactLimiter);
 
+const reviewLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,   // 1 hour
+  max: 5,                      // max 5 reviews per IP per hour
+  message: { error: 'Too many reviews, please try again later.' },
+});
+app.post('/api/reviews', reviewLimiter);
+
 // ── Routes ───────────────────────────────────────────────────────
 app.use('/api/products', productsRouter);
 app.use('/api/orders',   ordersRouter);
@@ -91,6 +99,7 @@ app.use('/api/admin',    adminRouter);
 app.use('/api/shipping_methods', shippingRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/contact',    contactRouter);
+app.use('/api/reviews',    reviewsRouter);
 
 
 // ── Health check ─────────────────────────────────────────────────
