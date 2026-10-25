@@ -206,7 +206,7 @@ Emails sent: order confirmation (customer), new-order alert (admin), stock probl
 
 ## Shipping, stock and order housekeeping
 
-- **Shipping prices** live in `lib/shipping.js` — edit there and redeploy. Standard is free from GH₵ 200.
+- **Shipping prices** live in `lib/shipping.js` — edit there and redeploy. There is no free shipping: every order pays its method's price.
 - **Stock** is deducted by the webhook after payment. If a paid order can't be deducted (oversold), the admin gets an email alert.
 - **Unpaid orders** are cancelled automatically after 48 hours (`lib/cleanup.js`). A payment that arrives later still marks the order paid.
 

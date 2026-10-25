@@ -62,7 +62,7 @@ router.post(
 
     // Calculate totals
     const subtotal = lineItems.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingCost = getShippingCost(shipping_method, subtotal);
+    const shippingCost = getShippingCost(shipping_method);
     const total = Math.round((subtotal + shippingCost) * 100) / 100; // avoid float drift like 204.00000000000003
 
     // Generate ref
