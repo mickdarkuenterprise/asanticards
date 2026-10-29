@@ -4,6 +4,8 @@ const supabase = require('../lib/supabase');
 const { requireAuth } = require('../middleware/auth');
 const { sendOrderConfirmation, sendAdminOrderAlert } = require('../lib/email');
 const { SHIPPING_METHODS, getShippingCost, methodAllowedFor } = require('../lib/shipping');
+const { initializeTransaction } = require('../lib/paystack');
+const { turnstileEnabled, verifyTurnstile } = require('../lib/turnstile');
 
 const router = express.Router();
 
@@ -28,6 +30,11 @@ router.post(
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    // Bot check before anything else (only once Turnstile is configured)
+    if (turnstileEnabled() && !(await verifyTurnstile(req.body.turnstile_token, req.ip))) {
+      return res.status(400).json({ error: 'Security check failed — please complete the check and try again' });
+    }
 
     const { customer_name, customer_email, customer_phone, delivery_address, shipping_method, items } = req.body;
 
@@ -97,10 +104,36 @@ router.post(
 
     if (orderErr) return res.status(500).json({ error: 'Failed to create order' });
 
-    // Return the ref and total for Paystack initialisation
+    // Start the Paystack transaction here with the secret key, for the server's total.
+    // The website only gets the access code, so the amount can't be changed in the browser.
+    const totalPesewas = Math.round(total * 100); // Paystack amount in pesewas (GHS subunit) — must be an integer
+    let payment;
+    try {
+      payment = await initializeTransaction({
+        email: customer_email,
+        amountPesewas: totalPesewas,
+        orderRef: order.ref,
+        metadata: {
+          custom_fields: [
+            // order_ref is how the webhook finds this order — required
+            { display_name: 'Order Ref', variable_name: 'order_ref', value: order.ref },
+            { display_name: 'Customer Name', variable_name: 'customer_name', value: customer_name },
+            { display_name: 'Delivery Address', variable_name: 'address', value: delivery_address },
+            { display_name: 'Shipping Method', variable_name: 'shipping', value: shipping_method },
+            { display_name: 'Cart Items', variable_name: 'cart', value: lineItems.map(i => `${i.name} x${i.qty}`).join(', ') },
+          ],
+        },
+      });
+    } catch (err) {
+      console.error('[orders]', err.message);
+      await supabase.from('orders').update({ status: 'cancelled' }).eq('ref', order.ref);
+      return res.status(502).json({ error: 'Could not start payment — please try again' });
+    }
+
     res.status(201).json({
       order_ref: order.ref,
-      total_pesewas: Math.round(total * 100),   // Paystack amount in pesewas (GHS subunit) — must be an integer
+      access_code: payment.accessCode,
+      total_pesewas: totalPesewas,
       total_ghs: total,
     });
   }

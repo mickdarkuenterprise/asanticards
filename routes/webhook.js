@@ -58,8 +58,12 @@ async function processEvent(event) {
   const amountPaid  = event.data.amount / 100; // convert pesewas → GHS
 
   // Extract our internal order ref from Paystack metadata
-  const meta = event.data.metadata?.custom_fields || [];
-  // We pass order_ref as a custom field from the frontend
+  let metadata = event.data.metadata;
+  if (typeof metadata === 'string') {
+    try { metadata = JSON.parse(metadata); } catch { metadata = null; }
+  }
+  const meta = metadata?.custom_fields || [];
+  // The server passes order_ref as a custom field when it starts the transaction
   const orderRefField = meta.find(f => f.variable_name === 'order_ref');
 
   if (!orderRefField) {

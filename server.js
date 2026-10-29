@@ -62,9 +62,24 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' },
 });
 
+// Checkout limits — card testers hammer whatever starts a payment
 const checkoutLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,   // 10 minutes
+  max: 5,                      // max 5 checkout attempts per IP per 10 minutes
+  message: { error: 'Too many checkout attempts, please try again later.' },
+});
+
+const checkoutHourlyLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,   // 1 hour
-  max: 20,                     // max 20 checkout attempts per IP per hour
+  max: 15,                     // max 15 checkout attempts per IP per hour
+  message: { error: 'Too many checkout attempts, please try again later.' },
+});
+
+const checkoutEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,   // 1 hour
+  max: 5,                      // max 5 checkout attempts per email per hour
+  keyGenerator: req => 'email:' + String(req.body?.customer_email || '').trim().toLowerCase(),
+  skip: req => !req.body?.customer_email,
   message: { error: 'Too many checkout attempts, please try again later.' },
 });
 
@@ -81,7 +96,7 @@ const contactLimiter = rateLimit({
 });
 
 app.use('/api/', apiLimiter);
-app.post('/api/orders', checkoutLimiter);       // checkout only — not the admin order list
+app.post('/api/orders', checkoutLimiter, checkoutHourlyLimiter, checkoutEmailLimiter); // checkout only — not the admin order list
 app.post('/api/admin/login', loginLimiter);
 app.post('/api/contact', contactLimiter);
 

@@ -50,7 +50,6 @@ npm run dev
 1. Log in to your Paystack dashboard
 2. **Settings → API Keys & Webhooks**
    - Copy **Secret Key** → `PAYSTACK_SECRET_KEY`
-   - Copy **Public Key** → `PAYSTACK_PUBLIC_KEY`
 3. Under **Webhooks**, add:
    - URL: `https://your-api-domain.railway.app/api/webhook`
    - No separate webhook secret is needed — Paystack signs webhooks with your `PAYSTACK_SECRET_KEY`
@@ -89,13 +88,12 @@ Your API will be live at something like `https://asanti-api.up.railway.app`
 
 ## Deploy Frontend to Namecheap
 
-1. In the HTML file, find `PAYSTACK_PUBLIC_KEY` and replace with your real public key
-2. Find the `API_BASE` constant and set it to your Railway URL:
+1. Find the `API_BASE` constant and set it to your Railway URL:
    ```js
    const API_BASE = 'https://asanti-api.up.railway.app';
    ```
-3. Upload the HTML file via **cPanel → File Manager → public_html**
-4. Enable **SSL** in cPanel → SSL/TLS → Let's Encrypt (free)
+2. Upload the HTML file via **cPanel → File Manager → public_html**
+3. Enable **SSL** in cPanel → SSL/TLS → Let's Encrypt (free)
 
 ---
 
@@ -143,6 +141,10 @@ async function loadProductsFromAPI() {
 ```
 
 **2. Create order before opening Paystack**
+
+The server creates the order, calculates the total from its own prices and starts
+the Paystack transaction with the secret key. The website only gets an access code
+and opens the popup with Paystack Inline v2 (`https://js.paystack.co/v2/inline.js`):
 ```js
 async function initiatePaystack() {
   // ... validate form fields ...
@@ -157,26 +159,16 @@ async function initiatePaystack() {
       delivery_address: `${addr}, ${city}`,
       shipping_method: shippingMethod,
       items: cart.map(i => ({ product_id: i.id, qty: i.qty })),
+      turnstile_token: token, // only needed once TURNSTILE_SECRET_KEY is set
     }),
   });
 
-  const { order_ref, total_pesewas } = await res.json();
+  const { order_ref, access_code } = await res.json();
 
-  const handler = PaystackPop.setup({
-    key: PAYSTACK_PUBLIC_KEY,
-    email,
-    amount: total_pesewas,
-    currency: 'GHS',
-    ref: order_ref,
-    metadata: {
-      custom_fields: [
-        { display_name: 'Order Ref', variable_name: 'order_ref', value: order_ref }
-      ]
-    },
-    callback: (response) => onPaymentSuccess(response, order_ref),
-    onClose: () => { /* handle cancel */ },
+  new PaystackPop().resumeTransaction(access_code, {
+    onSuccess: (transaction) => onPaymentSuccess(transaction, order_ref),
+    onCancel: () => { /* handle cancel */ },
   });
-  handler.openIframe();
 }
 ```
 
